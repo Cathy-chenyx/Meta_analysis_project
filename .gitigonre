@@ -12,8 +12,9 @@
 *.toc
 *.bak
 *~
-.DS_Store  # Mac
-Thumbs.db  # Windows
+
+.DS_Store
+._*
 
 # ============ 数据/隐私文件 ============
 /data/raw/   # 忽略整个原始数据目录
