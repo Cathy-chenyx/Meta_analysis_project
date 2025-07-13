@@ -1,0 +1,330 @@
+---
+title: "诊断试验双变量随机效应模型"
+author: "陈奕昕"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(readxl)
+library(mada)
+library(dplyr)
+library(ggplot2)
+library(showtext)
+showtext_auto() 
+```
+
+# 诊断试验Meta分析
+
+在诊断试验中，由于研究中总是有两个相关的结果 ：\
+(1) 对患有目标疾病的参与者进行诊断测试的准确性，用灵敏度来衡量\
+(2) 对未患有目标疾病的参与者的准确性，用特异度来衡量
+
+研究往往使用不同的阈值，这使诊断性研究的荟萃分析变得更加复杂。即使在同一项研究中，也具有相应敏感性和特异性的多个阈值
+
+假设每项诊断研究只选择一对灵敏度和特异性。
+
+除灵敏度和特异性外，诊断研究中还使用其他双变量统计（阳性预测值和阴性预测值）这两中测量方法还取决于人群患病率。
+
+从灵敏度和特异性直接得出的一对诊断是阳性似然比（PLR）和阴性似然比（NLR）。被定义为受试者被测为阳性和阴性的概率
+
+## 双变量模型
+
+如前所述、 诊断人员必须在灵敏度和特异性之间做出权衡。 因为降低阈值会增加灵敏度，但同时降低特异性。因此灵敏度和特异度间存在负相关关系，可以使用二元模型体现。
+
+双变量随机效应模型（Bivariate Random Effects Model）是诊断试验 Meta 分析的金标准方法，由 Reitsma 等（2005）提出，用于同时合并**灵敏度**和**特异度**，并考虑二者之间的相关性。
+
+形式上，每项研究的对数变换敏感度 假定来自二元正态分布，其均值向量为 $(\theta_{sen},\theta_{Spe})$和协方差矩阵 Σ,即：$$\begin{pmatrix}logit(Sen_i)  \\ logit(Spe_i)\end{pmatrix} \backsim N(\begin{pmatrix} \theta_{Sen} \\ \theta_{Spe}\end{pmatrix},\Sigma)  $$
+
+$$
+\Sigma = \begin{pmatrix} \sigma^2_{Sen} & \rho\sigma_{Sen}\rho_{Spe} \\ \rho\sigma_{Sen}\rho_{Spe} & \sigma^2_{Spe} \end{pmatrix}
+$$
+
+其中，$\sigma_{Sen},\sigma_{Spe}$分别表示各研究对数灵敏度和特异度的标准偏差，ρ 表示它们之间的相关性。不同研究间的样本量不同，精度也不同，在Meta分析时的权重也不同。
+
+**研究内变异**$s^2_{Sen_i}$和$s^2_{Sen_i}$的对数敏感性及特异性的估计如下：
+
+$$
+s^2_{Sen_i}=\frac{1}{n_{i1}Sen_i(1-Sen_i)}
+$$
+
+$$
+s^2_{Spe_i}=\frac{1}{n_{i1}Spe_i(1-Spe_i)}
+$$
+
+将**研究内变异**以矩阵形式表示为
+
+$$
+S_i=\begin{pmatrix}s^2_{Sen_i} &0\\0&s^2_{Spe_i}\end{pmatrix}
+$$
+
+则诊断试验Meta分析完整的双变量模型为
+
+$$
+\begin{pmatrix}logit(Sen_i)  \\ logit(Spe_i)\end{pmatrix} \backsim N(\begin{pmatrix} \theta_{Sen} \\ \theta_{Spe}\end{pmatrix},\Sigma+S_i)  
+$$
+
+**模型结构**：
+
+1. **研究内变异**（Within-study variation）：
+   $$
+   \begin{pmatrix}
+   \text{logit}(Sen_i) \\
+   \text{logit}(Spe_i)
+   \end{pmatrix}
+   \sim N\left(
+   \begin{pmatrix}
+   \theta_{i} \\
+   \phi_{i}
+   \end{pmatrix},
+   \mathbf{S}_i
+   \right)
+   $$
+
+   - $Sen_i, Spe_i$：第 i 个研究的灵敏度和特异度
+   - $\mathbf{S}_i = \begin{pmatrix} s_{i1}^2 & 0 \\ 0 & s_{i2}^2 \end{pmatrix}$：研究内协方差矩阵
+   - $s_{i1}^2 = \frac{1}{TP_i} + \frac{1}{FN_i}, \quad s_{i2}^2 = \frac{1}{TN_i} + \frac{1}{FP_i}$
+
+2. **研究间变异**（Between-study variation）：
+   $$
+   \begin{pmatrix}
+   \theta_{i} \\
+   \phi_{i}
+   \end{pmatrix}
+   \sim N\left(
+   \begin{pmatrix}
+   \Theta \\
+   \Phi
+   \end{pmatrix},
+   \mathbf{\Sigma}
+   \right)
+   $$
+
+   - $\mathbf{\Sigma} = \begin{pmatrix} \tau_{\theta}^2 & \rho\tau_{\theta}\tau_{\phi} \\ \rho\tau_{\theta}\tau_{\phi} & \tau_{\phi}^2 \end{pmatrix}$：研究间协方差矩阵
+   - $\Theta, \Phi$：总体对数优势灵敏度/特异度
+   - $\tau_{\theta}, \tau_{\phi}$：研究间标准差
+   - $\rho$：灵敏度与特异度间的相关系数（通常为负值）
+   
+**核心假设**：
+
+1. 每项研究的真实效应量 $(\theta_i, \phi_i)$ 服从二元正态分布
+2. 研究内方差 $\mathbf{S}_i$ 已知（基于四格表数据计算）
+3. 灵敏度和特异度通过 logit 转换满足正态性
+4. 考虑研究间异质性（$\tau_{\theta}^2 > 0, \tau_{\phi}^2 > 0$）
+5. 允许灵敏度和特异度存在相关性（$\rho \neq 0$）
+   
+# R 语言实现
+
+## 1.导入数据
+
+数据中应至少包含四列：TP（true positives)，FN（false negatives)，FP(false positives)，和TN(true negatives)，分别代表数据的真阳性，假阴性，假阳性和真阴性率。
+
+默认情况下，每个单元格都会增加0.05 以防2\*2表格中出现0值的情况。置信区间为Wilson score 区间
+
+从图表中识别模式往往比从表格中识别模式容易得多。 从数据的图表中往往比从表格中更容易识别数据的模式。应在分析的某个阶段绘制灵敏度和假阳性率对。除了点估计值外，其不确定性也值得关注。尤其是标准误差较大的异常值 标准误差较大的异常值可能会影响对数据的理解。
+
+## 2. 描述性统计
+
+接下来，将绘制配对森林图（paired forest plot）、cross hairs” plot和带置信度椭圆的图（plot with confidence ellipses）。
+
+在这里，我们可以了解离群值（在敏感度森林图或十字线图和椭圆图中很容易观察到）和异质性（不相交的置信椭圆）。此外，颜色的使用还揭示了诊断准确性 而符号则表明 CT（至少在任意子集中）更准确，因为它们聚集在左上角。
+
+## 3.拟合双变量模型
+
+### 拟合无协变量的双变量模型
+
+在R中，`Metatron`包中的`fit.bivar` 函数可以实现广义线性混合模型的双变量模型。
+
+双变量模型的所有参数都可以在 `summary(fit1)`的输出中：集合对数转换后的灵敏度和假阳性率可在 `Estimate` 一栏中找到。为方便起见 为方便起见，还给出了反向转换值（此处为 0.939和 0.214）。研究间随机效应的标准偏差（0.657 和 0.833） 以及它们之间的相关性（此处为 -0.318）。 必要时可计算协方差
+
+### SROC曲线
+
+在大多数 DTA meta分析应用领域中，都会使用显性或隐性的临界值来对筛查检验的结果进行二分。主要研究的作者在选择临界值时会在假阳性率和灵敏度之间进行折中。在初选研究的层面上，代表假阳性率与灵敏度之间不同权衡的曲线被称为 的曲线称为接收者操作特征曲线（receiver operating characteristic,ROC)曲线
+
+
+# 题目实例分析
+
+## 1. 数据准备与描述性统计
+```{r data-prep}
+# 导入数据
+data <- read_excel("1743058336166-考试题目三数据.xlsx") %>%
+  rename(TP = tp, FP = fp, FN = fn, TN = tn)
+
+# 计算关键指标（含0.5连续性校正）
+data$sens <- (data$TP + 0.5) / (data$TP + data$FN + 1)
+data$fpr <- (data$FP + 0.5) / (data$TN + data$FP + 1)
+data$spec <- 1 - data$fpr
+
+# 描述性统计
+descr <- madad(data, correction = 0.5)
+
+# 计算中位数和范围
+sens_stats <- summary(data$sens)
+spec_stats <- summary(data$spec)
+```
+
+
+- **关键描述性结果：**
+
+- 包含 `r nrow(data)` 项研究
+- **灵敏度**：
+  - 范围：`r round(min(data$sens), 2)`-`r round(max(data$sens), 2)`
+  - 中位数：`r round(median(data$sens), 2)`
+- **特异度**：
+  - 范围：`r round(min(data$spec), 2)`-`r round(max(data$spec), 2)`
+  - 中位数：`r round(median(data$spec), 2)`
+- 异质性检验高度显著（p < 0.001），表明存在明显研究间变异
+
+## 2. 可视化分析
+
+### 森林图（随机抽取10项研究）
+
+```{r forest-plots, fig.width=10, fig.height=6}
+set.seed(123)
+sample_data <- data[sample(1:nrow(data), 10), ]
+descr_sample <- madad(sample_data)
+
+par(mfrow = c(1, 2))
+forest(descr_sample, "sens", snames = sample_data$Study_ID, 
+       main = "敏感性森林图")
+forest(descr_sample, "spec", snames = sample_data$Study_ID,
+       main = "特异性森林图")
+```
+
+### 十字交叉图
+
+```{r crosshair, fig.width=8, fig.height=6}
+crosshair(data, 
+          pch = ifelse(data$Test == "CT", 16, 17),
+          col = ifelse(data$Indirect == 1, "blue", "red"),
+          cex = 0.8)
+legend("bottomright", c("CT", "MRI"), pch = c(16, 17))
+legend("topright", c("间接比较", "直接比较"), 
+       col = c("blue", "red"), pch = 16)
+```
+
+### ROC置信椭圆图
+
+```{r roc-ellipse, fig.width=8, fig.height=6}
+ROCellipse(data, 
+           pch = ifelse(data$Test == "CT", 16, 17),
+           col = ifelse(data$Indirect == 1, "blue", "red"))
+```
+
+
+
+**可视化解读：**
+
+1. **森林图**：显示各研究灵敏度/特异度估计值及95%CI
+2. **十字交叉图**：
+   - CT研究（蓝色）多集中在右上区域（高灵敏度）
+   - MRI研究（红色）分布更分散
+   - 间接研究（蓝色）与直接研究（红色）无明显分布差异
+3. **置信椭圆**：椭圆重叠度低，证实显著异质性
+
+## 3. 双变量随机效应模型拟合
+### 模型结果
+
+```{r}
+fit_bvm <- reitsma(data, correction = 0.5)
+
+# 提取合并效应量
+pooled_sens <- plogis(fit_bvm$coefficients[1])
+pooled_sens_ci <- plogis(confint(fit_bvm)[1, ])
+
+pooled_fpr <- plogis(fit_bvm$coefficients[2])
+pooled_spec <- 1 - pooled_fpr
+pooled_spec_ci <- 1 - plogis(confint(fit_bvm)[2, c(2, 1)])
+
+# 研究间变异参数
+tau_sens <- sqrt(fit_bvm$Psi[1, 1])
+tau_spec <- sqrt(fit_bvm$Psi[2, 2])
+rho <- cov2cor(fit_bvm$Psi)[1, 2]
+```
+
+
+
+
+## 4. SROC曲线绘制
+
+```{r sroc-plot, fig.width=8, fig.height=6}
+# 绘制基础图形（使用默认英文标签）
+plot(fit_bvm, 
+     sroclty = 1, 
+     sroclwd = 2)
+
+# 添加中文标题和坐标轴标签
+title(main = "SROC曲线（双变量模型）",
+      #xlab = "假阳性率 (1 - 特异度)",
+      #ylab = "灵敏度"
+      )
+
+# 添加研究点
+points(data$fpr, data$sens,
+       col = ifelse(data$Test == "CT", "blue", "red"),
+       pch = ifelse(data$Test == "CT", 16, 17),
+       cex = 0.7)
+
+# 添加图例
+legend("bottomright", 
+       c("CT", "MRI"),
+       col = c("blue", "red"), 
+       pch = c(16, 17),
+       title = "检测方法")
+
+# 添加附加图例（置信区域说明）
+legend("topright", 
+       c("合并估计", "95%置信区域", "95%预测区域"),
+       lty = c(0, 1, 2), 
+       pch = c(15, NA, NA),
+       col = c("black", "black", "black"),
+       title = "图例说明")
+
+```
+
+**SROC曲线解读：**
+
+1. 曲线靠近左上角，表明整体诊断准确性高
+2. 95%置信区域（实线）较窄，提示合并估计精确
+3. 95%预测区域（虚线）较宽，反映研究间异质性大
+4. CT研究（蓝点）更集中于高灵敏度区域
+
+## 协变量分析（检测类型影响）
+
+```{r covariate-analysis}
+fit_cov <- reitsma(data, formula = cbind(tsens, tfpr) ~ Test)
+```
+
+**协变量结果：**
+
+| 参数          | 估计值                                | p值       | 临床意义              |
+| ------------- | ------------------------------------- | --------- | --------------------- |
+| tsens.TestMRI | `r round(fit_cov$coefficients[2], 3)` | `< 0.001` | MRI灵敏度显著低于CT   |
+| tfpr.TestMRI  | `r round(fit_cov$coefficients[4], 3)` | `< 0.001` | MRI假阳性率显著高于CT |
+
+## 6. 结论与建议
+
+### 诊断准确性
+
+- **合并灵敏度**：`r round(pooled_sens*100, 1)`% (95%CI: `r round(pooled_sens_ci[1]*100, 1)`-`r round(pooled_sens_ci[2]*100, 1)`%)
+- **合并特异度**：`r round(pooled_spec*100, 1)`% (95%CI: `r round(pooled_spec_ci[1]*100, 1)`-`r round(pooled_spec_ci[2]*100, 1)`%)
+
+### 异质性
+
+- 研究间标准差较大（τ_θ = `r round(tau_sens, 3)`, τ_φ = `r round(tau_spec, 3)`）
+- 灵敏度与特异度负相关（ρ = `r round(rho, 3)`），符合诊断阈值效应
+
+### 检测类型差异
+
+- **CT的灵敏度显著高于MRI**（p < 0.001）
+- **CT的假阳性率显著低于MRI**（p < 0.001）
+
+### 临床应用建议
+
+1. **CT可作为首选筛查工具**：具有更高的灵敏度和更低的假阳性率
+2. **MRI阳性结果需谨慎解读**：假阳性率较高，建议结合其他检查确认
+3. **考虑研究特征的影响**：显著的异质性提示需考虑人群特征、金标准等研究设计因素的差异

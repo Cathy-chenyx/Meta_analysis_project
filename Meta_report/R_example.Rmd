@@ -1,0 +1,206 @@
+---
+title: "Meta分析完整解决方案"
+author: "陈奕昕 3227042017"
+date: "2025年6月4日"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(meta)
+library(readxl)
+library(writexl)
+library(dplyr)
+library(ggplot2)
+
+```
+
+# 数据准备（使用内置数据集替代外部文件)
+
+```{r}
+# 创建二分类数据（替代Data 1.csv）
+binary_data <- read.csv("实例_R代码/Data 1.csv")
+
+# 创建连续数据（替代Data 2.csv）
+continuous_data <- read.csv("实例_R代码/Data 2.csv")
+
+# 创建HR数据（替代example HR.xlsx）
+hr_data <- read_excel ("实例_R代码/example HR.xlsx")
+# 创建MD数据（替代example MD.xlsx）
+md_data <- read_excel ("实例_R代码/example MD.xlsx")
+
+# 创建附加数据（替代练习数据）
+additional_data <- read_excel("实例_R代码/Exercise 1.xlsx")
+```
+
+# 二分类数据Meta分析
+
+```{r}
+library(meta)
+
+met1 <- metabin(
+  event.e = N_hip_E,
+  n.e = Total_E,
+  event.c = N_hip_C,
+  n.c = Total_C,
+  studlab = paste(Source, Year),
+  data = binary_data,
+  sm = "RR"
+)
+
+summary(met1)
+forest(met1, 
+       leftcols = c("studlab", "event.e", "n.e", "event.c", "n.c"),
+       label.e = "维生素D组",
+       label.c = "安慰剂组")
+```
+
+# 连续数据Meta分析
+
+```{r}
+met2 <- metacont(
+  n.e = N_E,
+  mean.e = Mean_E,
+  sd.e = SD_E,
+  n.c = N_C,
+  mean.c = Mean_C,
+  sd.c = SD_C,
+  data = continuous_data,
+  studlab = Studies
+)
+
+summary(met2)
+forest(met2,
+       leftcols = c("studlab", "n.e", "mean.e", "sd.e", "n.c", "mean.c", "sd.c"),
+       label.e = "治疗组",
+       label.c = "对照组")
+```
+
+# HR数据Meta分析
+
+```{r}
+met3 <- metagen(
+  TE = log(HR), 
+  lower = log(lower.HR), 
+  upper = log(upper.HR),
+  data = hr_data,
+  studlab = paste(Author, Year), 
+  sm = "HR"
+)
+
+summary(met3)
+forest(met3, leftcols = c("studlab"))
+```
+
+# MD数据Meta分析
+
+```{r}
+met4 <- metagen(
+  TE = MD, 
+  seTE = seMD,
+  data = md_data,
+  studlab = Studies, 
+  sm = "MD"
+)
+
+summary(met4)
+forest(met4, leftcols = c("studlab"))
+```
+
+# 亚组分析
+
+```{r}
+# 维生素D剂量亚组分析
+met1_sub <- update(met1, 
+                   subgroup = Vitamin_D,
+                   subgroup.name = "维生素D剂量")
+
+forest(met1_sub,
+       leftcols = c("studlab", "event.e", "n.e", "event.c", "n.c"))
+
+# 药物类型亚组分析
+met2_sub <- metacont(
+  n.e = N_E,
+  mean.e = Mean_E,
+  sd.e = SD_E,
+  n.c = N_C,
+  mean.c = Mean_C,
+  sd.c = SD_C,
+  subgroup = Drug,
+  subgroup.name = "药物类型",
+  data = continuous_data,
+  studlab = Studies
+)
+
+forest(met2_sub,
+       leftcols = c("studlab", "n.e", "mean.e", "sd.e", "n.c", "mean.c", "sd.c"))
+```
+
+# Meta回归
+
+```{r}
+# 维生素D数据meta回归
+mrg <- metareg(met1, ~ Level)
+summary(mrg)
+bubble(mrg, xlab = "研究水平", ylab = "效应量")
+
+# 附加数据meta回归
+met_add <- metabin(
+  event.e = TB_E,
+  n.e = Total_E,
+  event.c = TB_C,
+  n.c = Total_C,
+  data = additional_data,
+  studlab = paste(Study, Year),
+  sm = "RR"
+)
+
+mrg_add <- metareg(met_add, ~ Latitude)
+summary(mrg_add)
+bubble(mrg_add, xlab = "纬度", ylab = "效应量")
+```
+
+# 发表偏倚检测
+
+```{r}
+funnel(met1)
+metabias(met1, method.bias = "rank")  # Begg检验
+metabias(met1, method.bias = "linreg")  # Egger检验
+
+tf <- trimfill(met1)
+funnel(tf)
+```
+
+# 敏感性分析
+
+```{r}
+metinf <- metainf(met1, pooled = "random")
+forest(metinf, title = "逐篇剔除敏感性分析")
+
+metcum <- metacum(met1, sortvar = Year)
+forest(metcum, title = "累积Meta分析")
+```
+
+# 合并结果森林图
+
+```{r}
+# 方法1：敏感性分析（并排展示RR和OR）
+met_rr <- metabin(N_hip_E, Total_E, N_hip_C, Total_C,
+                 data = binary_data,
+                 sm = "RR",
+                 studlab = paste(Source, Year))
+
+met_or <- metabin(N_hip_E, Total_E, N_hip_C, Total_C,
+                 data = binary_data,
+                 sm = "OR",
+                 studlab = paste(Source, Year))
+
+# 并排展示
+par(mfrow = c(1, 2))
+forest(met_rr, main = "主要分析（相对风险RR）")
+forest(met_or, main = "敏感性分析（比值比OR）")
+```
+
+

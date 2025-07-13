@@ -1,0 +1,248 @@
+---
+title: "网络Meta分析模型与应用"
+author: "陈奕昕"
+date: "2025-05-31"
+output:
+  word_document:
+    toc: true
+    toc_depth: '3'
+  pdf_document:
+    toc: true
+    toc_depth: 3
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: cosmo
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 6
+)
+library(netmeta)
+library(ggplot2)
+library(ggraph)
+library(igraph)
+library(showtext)
+showtext_auto() 
+```
+
+# 一、网络Meta分析模型概览
+
+网络Meta分析（NMA）通过整合直接与间接证据，实现多种干预措施的综合比较。根据统计框架和数据结构，主要分为以下模型：
+
+## 1.1 按统计框架分类
+
+```{r model-types, echo=FALSE}
+# 创建模型分类表
+model_types <- data.frame(
+  框架 = c("频率学模型", "贝叶斯模型", "半参数混合模型"),
+  核心特点 = c(
+    "基于加权最小二乘法，点估计+置信区间",
+    "MCMC抽样，后验分布+可信区间，提供SUCRA排序概率",
+    "结合频率学效率与贝叶斯灵活性"
+  ),
+  适用场景 = c(
+    "快速分析中等规模网络（<15种干预）",
+    "复杂网络、概率决策需求",
+    "大型异质网络"
+  )
+)
+
+knitr::kable(model_types, caption = "表1: 按统计框架分类的网络Meta分析模型")
+```
+
+## 1.2 按数据结构分类
+
+```{r data-structure, echo=FALSE}
+data_structure <- data.frame(
+  模型 = c("一致性模型", "不一致性模型"),
+  核心假设 = c(
+    "假设直接证据=间接证据（$\\theta_{\\text{direct}} = \\theta_{\\text{indirect}}$）",
+    "允许直接/间接证据冲突，节点拆分法定位矛盾"
+  ),
+  适用场景 = c(
+    "闭合良好网络",
+    "存在冲突证据的网络"
+  )
+)
+
+knitr::kable(data_structure, caption = "表2: 按数据结构分类的网络Meta分析模型")
+```
+
+## 1.3 按数据类型分类
+
+```{r data-type, echo=FALSE}
+data_type <- data.frame(
+  数据类型 = c("二分类数据", "连续型数据", "生存数据"),
+  模型 = c("Logit链接函数", "身份链接函数", "Cox比例风险模型"),
+  应用场景 = c("有效率、死亡率等二元结局", "评分变化、生物标志物等连续结局", "生存分析、时间事件数据")
+)
+
+knitr::kable(data_type, caption = "表3: 按数据类型分类的网络Meta分析模型")
+```
+
+## 1.4 扩展功能模型
+
+```{r extended-models, echo=FALSE}
+extended_models <- data.frame(
+  模型 = c("多水平NMA", "剂量反应NMA", "组分网络模型"),
+  功能 = c("解析剂量效应或组分交互", "线性/非线性剂量效应建模", "拆分复杂干预的贡献成分"),
+  应用示例 = c("不同剂量药物比较", "剂量依赖性疗效评价", "手术+药物联合疗法")
+)
+
+knitr::kable(extended_models, caption = "表4: 扩展功能网络Meta分析模型")
+```
+
+# 二、频率学框架下的NMA模型详解
+
+## 2.1 核心统计原理
+
+### 证据整合
+直接证据（A vs B）与间接证据（A→C→B）通过加权最小二乘法（WLS）合并：
+
+$$
+\hat{\theta}_{AB} = \frac{w_{\text{direct}} \hat{\theta}_{AB}^{\text{direct}} + w_{\text{indirect}} \hat{\theta}_{AB}^{\text{indirect}}}{w_{\text{direct}} + w_{\text{indirect}}}
+$$
+
+其中权重 $w = 1/\text{Var}(\hat{\theta})$，方差越小权重越高。
+
+### 一致性假设
+直接与间接证据的效应量需满足 $\theta_{AB}^{\text{direct}} = \theta_{AB}^{\text{indirect}}$，通过闭合环路Q检验验证：
+
+$$
+Q_{\text{inconsist}} = \sum w_k (\hat{\theta}_k^{\text{direct}} - \hat{\theta}_k^{\text{indirect}})^2 \sim \chi^2(\text{df})
+$$
+
+若 $p < 0.05$，拒绝一致性假设。
+
+```{r evidence-integration, echo=FALSE, fig.cap="图1: 直接与间接证据整合示意图"}
+# 证据整合示意图
+library(igraph)
+g <- graph_from_data_frame(data.frame(
+  from = c("A", "A", "B"),
+  to = c("C", "B", "C")
+), directed = FALSE)
+
+plot(g, layout = layout_in_circle, 
+     vertex.color = "lightblue", vertex.size = 30,
+     vertex.label.cex = 1.5, edge.width = 3,
+     edge.label = c("direct", "indirect", "direct"),
+     edge.label.cex = 1.2, edge.label.color = "red")
+```
+
+## 2.2 固定效应模型
+
+### 模型构建
+$$
+\mathbf{y} = \mathbf{X} \mathbf{\beta} + \mathbf{\epsilon}, \quad \mathbf{\epsilon} \sim N(0, \mathbf{\Sigma})
+$$
+
+- $\mathbf{y}$：研究效应量向量（如log OR）
+- $\mathbf{X}$：设计矩阵（编码治疗对比）
+- $\mathbf{\beta}$：各治疗绝对效应
+
+### 参数估计
+通过拉普拉斯矩阵伪逆求解：
+$$
+\hat{\mathbf{\beta}} = (\mathbf{X}^T \mathbf{W} \mathbf{X})^+ \mathbf{X}^T \mathbf{W} \mathbf{y}
+$$
+其中 $\mathbf{W} = \text{diag}(1/\sigma_k^2)$ 为权重矩阵。
+
+## 2.3 随机效应模型
+
+### 方差扩展
+在固定效应方差中加入异质性方差 $\tau^2$：
+$$
+\text{Var}_{\text{random}}(\hat{\theta}_k) = \sigma_k^2 + \hat{\tau}^2
+$$
+
+### $\tau^2$估计
+采用广义DerSimonian-Laird法：
+$$
+\hat{\tau}^2 = \max \left( 0, \frac{Q_{\text{res}} - \text{df}}{\text{tr}(\mathbf{(I-H)U})} \right)
+$$
+其中 $Q_{\text{res}}$ 为残差Q统计量，$\mathbf{H}$ 为帽矩阵。
+
+## 2.4 多臂研究处理
+对包含 $p>2$ 组的研究：
+1. 拆分为 $p(p-1)/2$ 个两两比较
+2. 调整方差协方差矩阵：
+   $$
+   \mathbf{\Sigma}_{\text{multi-arm}} = \mathbf{\Sigma} + \frac{\tau^2}{2} \mathbf{J}
+   $$
+   $\mathbf{J}$ 为全1矩阵，避免重复计算异质性。
+
+## 2.5 软件实现（R包 `netmeta`）
+
+```{r netmeta-demo}
+# 加载示例数据
+data(Senn2013)
+cat("### 数据集预览（前6行）：\n")
+head(Senn2013)
+
+# 随机效应模型（使用common替代fixed）
+nma_random <- netmeta(
+  TE = TE, 
+  seTE = seTE, 
+  treat1 = treat1, 
+  treat2 = treat2, 
+  studlab = studlab,
+  data = Senn2013,
+  common = FALSE  # 随机效应模型
+)
+
+# 模型结果摘要
+cat("\n### 模型结果摘要：\n")
+summary(nma_random)
+```
+
+```{r forest-plot, fig.cap="图2: 网络Meta分析森林图"}
+# 森林图
+forest(nma_random, 
+       xlab = "HbA1c差异 (mmol/mol)",
+       col.square = "steelblue",
+       col.diamond = "firebrick")
+```
+
+```{r network-plot, fig.cap="图3: 证据网络图"}
+# 证据网络图
+netgraph(nma_random,
+         cex = 1.5,
+         col = "lightblue",
+         lwd = 3,
+         number.of.studies = TRUE)
+```
+
+# 三、频率学NMA模型特性总结
+
+```{r model-pros-cons, echo=FALSE}
+pros_cons <- data.frame(
+  特性 = c("计算效率", "结果透明度", "异质性处理", "一致性检验", "多臂研究支持", "适用规模"),
+  优势 = c(
+    "无需MCMC抽样，秒级完成分析",
+    "显式矩阵运算，过程可追溯",
+    "闭式解估计 $\\tau^2$，稳定性高",
+    "全局Q检验实现简单",
+    "方差调整法保持独立性",
+    "最优支持10-15种干预的中等网络"
+  ),
+  局限性 = c(
+    "无法提供概率排序（SUCRA）",
+    "强依赖渐近正态假设",
+    "DL法可能低估异质性",
+    "无法定位局部不一致性（需节点拆分法补充）",
+    "未完全利用组内相关性信息",
+    "超大型网络（>20干预）易矩阵奇异"
+  )
+)
+
+knitr::kable(pros_cons, caption = "表5: 频率学NMA模型特性总结")
+```
+

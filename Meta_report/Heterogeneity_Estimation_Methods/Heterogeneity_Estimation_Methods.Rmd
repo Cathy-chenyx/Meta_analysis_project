@@ -1,0 +1,121 @@
+---
+title: "常见的异质性估计方法及代码示例"
+author: "陈奕昕"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+参数 $\tau^2$被定义为效应量正式值大小的方差。换句话说，如果我们有一个无限大的研究样本，当样本量足够大时，每个研究的估计值都可以近似看做真实值），并计算出真实效应大小的方差,那么这个方差就是真实效应的方差, 这个方差就是 $\tau^2$。
+
+由于我们无法观察到真实效应量，因此无法直接计算出这一方差。但是我们可以根据观测值对其进行估计，估计值记为$T^2$为了得出这个估计值，我们从差值 $（Q-df)$ 开始，表示真实效应的离散度。我们除以一个量$C$，这样做的效果是把测量结果放回到原来的度量中，并使其成为一个平均值、而不是偏差平方的总和。
+
+------------------------------------------------------------------------
+
+### **一、常见**$\tau^2$估计方法
+
+| **方法** | **原理** | **适用场景** |
+|-----------------|-------------------------------------|------------------|
+| **DerSimonian-Laird (DL)** | 基于矩估计法，通过Q统计量与自由度之差计算$\tau^2$ | 传统方法，计算速度快，适用于小样本 |
+| **REML** | 限制性最大似然估计，避免固定效应参数估计的偏差 | 推荐默认方法，平衡精度与计算效率 |
+| **Maximum Likelihood (ML)** | 标准最大似然估计，但可能低估$\tau^2$ | 需大样本支持，理论分析为主 |
+| **Paule-Mandel (PM)** | 基于加权残差平方和最小化，无需分布假设 | 鲁棒性强，适用于复杂异质性结构 |
+| **Sidik-Jonkman (SJ)** | 基于样本方差的加权平均，假设异质性方差与研究内方差成比例 | 异质性较高时表现稳定 |
+| **Hedges (HE)** | 改进的矩估计法，修正小样本偏差 | 小样本Meta分析 |
+
+------------------------------------------------------------------------
+
+### **二、R语言实现示例**
+
+#### **1. 数据准备**
+
+假设研究数据包含效应量（`TE`）及其方差（`seTE`）：
+
+```{r} 
+# 示例数据（效应量TE和标准误seTE）
+data <- read.csv("作业.csv")
+# 计算合并标准差和Cohen's d
+data$S_pooled <- sqrt(
+  ((data$Total_T - 1) * data$SD_T^2 + (data$Total_C - 1) * data$SD_C^2) / 
+    (data$Total_T + data$Total_C - 2))
+data$d <- (data$Mean_T - data$Mean_C) / data$S_pooled
+  
+# 计算方差
+data$var_d <- (data$Total_T + data$Total_C) / (data$Total_T * data$Total_C) + 
+    data$d^2 / (2 * (data$Total_T + data$Total_C))
+  
+  
+
+```
+
+#### **2. 使用`meta`包估计**$\tau^2$
+
+``` {r}
+# 安装并加载meta包
+#install.packages("meta")
+library(meta)
+
+# 使用不同方法估计τ²
+TE <- data$d
+seTE <- sqrt(data$var_d)
+meta_DL <- metagen(TE = TE, seTE = seTE, data = data, method.tau = "DL")
+meta_REML <- metagen(TE = TE, seTE = seTE, data = data, method.tau = "REML")
+meta_ML <- metagen(TE = TE, seTE = seTE, data = data, method.tau = "ML")
+meta_PM <- metagen(TE = TE, seTE = seTE, data = data, method.tau = "PM")
+meta_SJ <- metagen(TE = TE, seTE = seTE, data = data, method.tau = "SJ")
+meta_HE <- metagen(TE = TE, seTE = seTE, data = data, method.tau = "HE")
+
+# 查看结果（以REML为例）
+summary(meta_REML)
+```
+
+#### **3. 输出解读**
+
+-   $\tau^2$：异质性方差估计值（`tau^2 = 0.0351` ）。
+-   $\tau$：异质性标准差（如`tau = 0.1873`）。
+-   **I²**：异质性比例（如`I^2 = 62.8%`）。
+-   **Q检验**：异质性检验的p值（如`0.0197`）。
+
+------------------------------------------------------------------------
+
+### **三、不同方法对比示例**
+
+``` {r}
+# 提取各方法的τ²估计值
+tau2_values <- c(
+  DL = meta_DL$tau2,
+  REML = meta_REML$tau2,
+  ML = meta_ML$tau2,
+  PM = meta_PM$tau2,
+  SJ = meta_SJ$tau2,
+  HE = meta_HE$tau2
+)
+
+# 打印结果
+print(tau2_values)
+```
+
+
+
+------------------------------------------------------------------------
+
+### **四、方法选择建议**
+
+1.  **默认推荐**：使用**REML**（平衡精度与计算效率）。\
+2.  **小样本**：优先选择**DL**或**HE**（计算快，避免过拟合）。\
+3.  **高异质性**：尝试**PM**或**SJ**（对复杂异质性更鲁棒）。
+
+------------------------------------------------------------------------
+
+### **五、注意事项**
+
+1.  **置信区间**：使用`meta`包的`metagen`函数时，可通过`hakn = TRUE`启用Hartung-Knapp调整，提高小样本置信区间准确性。\
+2.  **结果报告**：始终报告$\tau^2$、I²和Q检验结果，如：\
+    “采用REML法估计异质性方差（$\tau^2 = 0.12$），I²=65%，提示高度异质性（Q=12.5, p=0.03）。”
+
+通过上述代码，可灵活选择异质性估计方法，为Meta分析提供统计学支持。
