@@ -1,0 +1,29 @@
+# ============ R 相关文件 ============
+.RData
+.Rhistory
+*.Rproj
+.Rproj.user/
+*.Ruserdata
+
+# ============ 临时文件 ============
+*.log
+*.aux
+*.out
+*.toc
+*.bak
+*~
+.DS_Store  # Mac
+Thumbs.db  # Windows
+
+# ============ 数据/隐私文件 ============
+/data/raw/   # 忽略整个原始数据目录
+!data/processed/  # 但保留处理后的数据（!表示例外）
+
+*.xlsx
+*.rds
+/personal_info.*
+
+# ============ 大型文件 ============
+*.zip
+
+/figure/
